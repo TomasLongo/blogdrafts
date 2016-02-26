@@ -1,20 +1,18 @@
 ---
 layout: post
-title:  "About Interfaces and Method Receivers"
+title:  "Learning Go - Interfaces and Method Receivers"
 date:   2016-01-18
 categories: go learning
 comments: true
-tags: [go,learning]
+tags: [go,learning,interface]
 ---
 
-Article about the relation between interfaces and the receiver type of methods
+While programming my first  programm with Go, I wanted to create an abstraction layer between my domain logic and the actual data sources. In my day work I would use a Java interface to do that. Piece of cake! So why not using Go interfaces just like I would use them in Java? Go does a great job letting interfaces look and feel like pointer to base classes/interfaces, but I encountered a situation where they did not behave like I expected. 
 
-[Intro]
-
-Let's lay the foundation for this post and cover a few terms that we need to understand beforehand.
+This blog post is my attempt to get a better understanding of the underlying mechanics of interface as well as improving my knowledge about Go itself. 
 
 ### Pointer vs. Non-Pointer receiver
-A struct in Go can be compared to a struct in C/C++. As in C/C++ a struct is a data container that groups data that belongs logically together. 
+A struct is the building block of every Go programm and can  be compared to a struct in C/C++. As in C/C++ a struct is a container that groups data that belongs logically together. 
 
 But, unlike the C pendant, structs in Go can also be equiped with methods that can operate on a struct's data. This is done by declaring a method with a so called receiver. Consider following example:
 
@@ -58,14 +56,14 @@ So when to use which syntax? Here is a simple rule of thumb:
 
 > If you just have to read data from the struct, use a non-pointer receiver. Otherwise, go with a pointer.
 
-#### Implications of the receiver mechanics
+### Implications of the receiver mechanics
 
-Besides the value/reference characteristic, receiver types also define so called [spec](method sets). A method set of a receiver type consists of all methods associated with that type and that fact comes along with a rule that specifies which type can access which method set. This implies that
+Besides the value/reference characteristic, receiver types also define so called [method set](https://golang.org/ref/spec#Method_sets). A method set of a receiver type consists of all methods associated with that type and that fact comes along with a rule that specifies which type can access which method set. This implies that
 
 * using a non-pointer variable, you can only access those methods that have been declared on a non-pointer receiver
 * using a pointer variable, you can access methods declared on a pointer and non-pointer receiver
 
-This fact has no meaning, as long as we invkoe our methods on concrete types. Go is smart enough to try both ways of invoking a method. Look at the following snippet 
+This fact has no meaning, as long as we invoke our methods on concrete types. Go is smart enough to try both ways of invoking a method. Look at the following snippet 
 
 
 {% highlight go %}
@@ -75,84 +73,102 @@ func (f *Foo) Baz() {...}
 func main() {
 	foo := Foo{}
 	foo.Baz() // OK, even though method was defined on a pointer receiver
-	(&foo).Baz() // <-- This is was Go tries behind the curtain
+	(&foo).Baz() // <-- This is what Go tries behind the curtain
 }
 {% endhighlight %}
 
-#### Asssigning values to interfaces
-Method sets will have an effect if we start to implement polymophism with the `interface` type. Interfaces are used to define a set of methods. Think of it as a protocol that describes how objects should communicte with each other.  
+### Asssigning values to interfaces
+Method sets will have an effect if we start to implement polymorphism with the `interface` type. Look at the following program:
+
+{% highlight go %}
+type Repository interface {
+	Owner() string
+	Name() string
+}
+
+type GithubRepo struct {
+	name string
+	owner string
+}
+
+func (g GithubRepo) Name() string {
+	return g.name
+}
+
+func (g GithubRepo) Owner() string {
+	return g.owner
+}
+
+func (g *GithubRepo) Fetch (url string) {
+	// magically fetch the repo from github
+	// and populate the fields
+	g.name = "Awesome Repo"
+	g.owner = "John Doe"
+} 
+
+// Print information for arbitrary repos. 
+// We dont care what we are reading from as
+// long as it satisfies the Repository interface
+func printRepoInfo(repo Repository) {
+	fmt.Printf("Repo %s belongs to %s", repo.Name(), repo.Owner())
+}
 
 
-* pointer vs. non-pointer receiver
-  * Link to article from guy as well as to go faq. Give a short tl;dr though
-  * tl;dr 
-    * Value receivers's method set contains methods declared with a method receiver
-      * code
-    * Pointer receivers contain methods from pointer receiver declarations as well as
-      from value receivers decalrations
-      * code
-  * Can I call methods that where decalared with a pointer receiver from a value receiver??
-    * This is possible: 
-      [code]
-    * Why is this possible?
-      * Go is smart and will try to dereference the pointer of the value and call the method by itself
-        [code]
-        foo := Foo{}
-        foo.pointerMethod() // --> OK
-        (&foo).pointerMethod() // --> This is what go is doing behind the curtains
+func main() {
+	githubRepo := GithubRepo{}
+	githubRepo.Fetch("https://github.com/tomaslongo/repo")
 
-* how do pointer vs non-pointer receiver affect the passing of objects to interfaces??
-* What is an interface in the 1st place? [mention cox article]
-  * An interface is represented internally by two pointers:
-    * An interface is a *type* of its own.
-    * One points the underlying value, e.g. whatever is assigned to the interface variable
-    * The other points to a table of pointers. The pointers in this table point to the underlying values methods that macht the declaration of the interface.
-    * [code sample]
-      	type Greeter interface {
-   		MyNameIs() string
-		SayHiTo(otherPerson Person) string
-	}
-	
-	type Person struct {
-		name string
-	}
+	printRepoInfo(githubRepo)	
+}
+{% endhighlight %}
 
-	func (j Person) MyNameIs() string {
-		return j.name
-	}
+This is our scenario: We want to be able to fetch some information from a remote repository and print it to the screen. We don't really care what repo we are reading from. 
 
-	func (j Person) SayHiTo(otherPerson Greeter) string {
-		return "Hi " + otherPerson.MyNameIs() + " how are you?"
-	}
+Our little program provides an interface, `Repository`, which exposes methods that gets us the informatin we want. In order to display this informaion we pass an instance of `Repository` to the function `printRepoInfo`.
 
-	func main() {
-		john := John{name: "John"}
-		max  := Max{name: "Max}	
-		
-		john.SayHiTo(max)
-	}
-      [code sample end]
-    
-    * We are interested in function `SayHiTo`, which takes in a paramter of type `Person`. Now, how does `Person` look like under the hood?
-      As we said earlier, interfaces are represented by two pointers. In this case:
-        * Pointer one points to the type `Person` which we passed in the main function
-        * Pointer two points the function `SayHiTo` which is implemenented by the specific instance of `Person`, `Max` in this case.	
-      the Invokiation of `SayHiTo` on the passed `Greeter` object is now handled is now handled by the interface. 
-        * Alternatices
-          * a) since the interface holds the table of methods it does not need to dereference the underlying value to invoke the method
-          * b) it dereferences the underlying value 
-      Up to this point we should be fine. Compiling and running our little programm should make John say hi to max.
+The question at this point is, how does all the stuff about method receivers, pointer vs non-pointer affect our little snippet?
 
-* Invoking a method that was declared on a pointer receiver on an interface that has an underlying non pointer value
-  * Instead of declaring 'SayHiTo' for value, we now assign it to a pointer receiver 
-    * [code sample]
-	// same declarations as above
-        ...
+Let`s first analyse the current version of the snippet. If we compile and run it, Go will happily spit out the information of the repo we were asking for. Why?
 
-	func (j *Person) SayHiTo(oterPerson *Greeter) string {
-		return "Hi " + otherPerson.MyNameIs() + " how are you?"
-	}
-      [code sample end]
-    * What we now get is the following error message from Go
-    * What's the matter here???
+### The Meaning of Method Sets
+Because we provided a method set that includes the methods delcared by the interface. We defined the methods `Name` and `Owner` on non-pointer receivers and passed `printRepoInfo` a non-pointer. So, Go was able to find the interface methods in the method set of the type we provided.
+
+Now let's break the program! All we have to do is to provide a method set that does not containt the methods to satisfy the interface. We do this by changing the declaration of `Name` and `Owner`. Instead of using non pointer-receivers we use pointer receivers.
+
+{% highlight go %}
+func (g *GithubRepo) Name() string {
+	return g.name
+}
+
+func (g *GithubRepo) Owner() string {
+	return g.owner
+}
+{% endhighlight  %}
+
+Tryin to install this program does now fail and we get the following error message
+
+`src/scratches/interfacetests.go:40: cannot use githubRepo (type GithubRepo) as type Repository in argument to printRepoInfo: GithubRepo does not implement Repository (Name method has pointer receiver)`
+
+Go says that our passed type does not implement the interface methods, and is right with that claim simply because we did not provide the right method set. *(Remember what we concluded about method sets above! It comes back to us at this very moment)*
+
+This error got me a whole while to understand because I was thinking of the interface type to be like interfaces in Java. But interfaces in Go are not built  to be used like that. On the surface, interfaces let you implement the good old 'is-a' relation and they also feel like pointers to base classes if you think in that terms.
+
+The misunderstanding is that interfaces are not pointers, but should be seen more like containers. By assigning a value to an interface variable, Go simply sets up the fields of that container. An interface is made up of the underlying value, it is assigned and, most importantly, a table to functions that is populated with the method set of the underlying value that satisfies the interface delcaration.
+
+![Interfaces under the hood]({{site.url}}/images/interfaces.png){: .centered-image}
+
+Read this excellent [Article](http://research.swtch.com/interfaces) from Russ Cox (the image above is stolen from that article. Just replace `Stringer` for `Repository`) for an in depth discussion of how interfaces work under the hood.
+
+In order to fix the error we have two choices:
+
+1. We adapt the invokation of `printRepoInfo` to take in a pointer, which would assign a pointer to parameter variable
+2. We revert our change and declare the methods `Name` and `Owner` on non-pointer receivers
+
+Either way, it burns down to the fact that we do not have to provide the right type, but the right method set.
+
+### tl;dr
+
+Interfaces are a means to abstract away concrete types so that our programs do not have to have static knowledge about them. Their look and feel is intended to be much like that from classic OOP languages like Java and Go does a good job hiding the internal differences from the developer. However, there are cases where we should be aware of the fact that interfaces in Go are not classical pointers.
+
+If you want to dig a bit deeper, take a look at [this nice article](http://jordanorelli.com/post/32665860244/how-to-use-interfaces-in-go) from Jordan Orelli. It was a valuable resource when researching about the topic.
 
